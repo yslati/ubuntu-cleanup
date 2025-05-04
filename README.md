@@ -18,6 +18,7 @@ The script cleans the following areas:
 - **Snap Cache** - Safely cleans snap package caches
 - **Bun Cache** - Cleans Bun package manager cache
 - **NPM Cache** - Cleans Node.js package manager cache
+- **PIP Cache** - Cleans Python package manager cache files while preserving installed packages
 - **Firefox Cache** - Removes browser cache files while preserving your profiles
 - **Chrome Cache** - Safely cleans browser cache without affecting your history or settings
 - **Ubuntu Software Center Cache** - Removes downloaded packages and temporary files

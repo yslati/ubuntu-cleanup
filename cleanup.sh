@@ -153,6 +153,19 @@ else
     echo -e "NPM not found. Skipping."
 fi
 
+# Pip Cache Cleanup
+print_section "Pip Cache Cleanup"
+if command -v pip &>/dev/null; then
+    before_size=$(get_size ~/.cache/pip)
+    echo -e "Current Pip cache size: ${RED}$before_size${NC}"
+    pip cache purge
+    after_size=$(get_size ~/.cache/pip)
+    echo -e "Pip cache size after cleanup: ${GREEN}$after_size${NC}"
+    track_cleaning "$before_size" "$after_size" "Pip Cache"
+else
+    echo -e "Pip not found. Skipping."
+fi
+
 # Firefox Cache Cleanup
 print_section "Firefox Cache Cleanup"
 if [ -d ~/.mozilla/firefox ]; then
