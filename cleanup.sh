@@ -39,8 +39,8 @@ track_cleaning() {
     local section=$3
     
     # Convert sizes to bytes for comparison
-    local before_bytes=$(numfmt --from=iec "$before")
-    local after_bytes=$(numfmt --from=iec "$after")
+    local before_bytes=$(numfmt --from=iec "$before" 2>/dev/null || echo 0)
+    local after_bytes=$(numfmt --from=iec "$after" 2>/dev/null || echo 0)
     local saved=$((before_bytes - after_bytes))
     
     cleaned_space["$section"]=$saved
@@ -100,32 +100,137 @@ after_size=$(get_size ~/.config/Code)
 echo -e "VS Code cache size after cleanup: ${GREEN}$after_size${NC}"
 track_cleaning "$before_size" "$after_size" "VS Code Cache"
 
-# Snap Cache Cleanup
-print_section "Snap Cache Cleanup"
-before_size=$(get_size ~/snap)
-echo -e "Current Snap cache size: ${RED}$before_size${NC}"
+# Snap Cache Cleanup (Enhanced)
+print_section "Snap Package Cleanup"
+before_size=$(get_size /var/lib/snapd)
+echo -e "Current total Snap size: ${RED}$before_size${NC}"
 
-# Check if Discord or Slack are snap packages
-discord_snap=$(snap list 2>/dev/null | grep -i discord)
-slack_snap=$(snap list 2>/dev/null | grep -i slack)
+# Report current revisions
+echo -e "\n${BLUE}Current snap revisions:${NC}"
+snap list --all
 
+# List current apps
+active_snaps=$(snap list | awk 'NR>1 {print $1}' | sort | uniq)
+
+# Clean old revisions
+echo -e "\n${YELLOW}Removing old snap revisions...${NC}"
+LANG=en_US.UTF-8 snap list --all | awk '/disabled/{print $1, $3}' | 
+    while read snapname revision; do
+        echo "Removing $snapname revision $revision"
+        sudo snap remove "$snapname" --revision="$revision"
+    done
+
+# Clean snap cache
 if [ -d /var/lib/snapd/cache ]; then
-    sudo find /var/lib/snapd/cache -type f -name "*.snap" -mtime +30 -delete
+    echo -e "\n${YELLOW}Cleaning snap cache...${NC}"
+    sudo rm -rf /var/lib/snapd/cache/*.snap
 fi
 
-if [ -d ~/snap/code/184/.local/share/Trash ]; then
-    rm -rf ~/snap/code/184/.local/share/Trash/*
+# Clean out snap temp dir
+if [ -d /var/lib/snapd/tmp ]; then
+    sudo rm -rf /var/lib/snapd/tmp/*
 fi
 
+# Clean old seed snaps
+if [ -d /var/lib/snapd/seed ]; then
+    echo -e "\n${YELLOW}Cleaning seed snaps older than 1 year...${NC}"
+    find /var/lib/snapd/seed -type f -name "*.snap" -mtime +365 -exec sudo rm {} \; 2>/dev/null
+fi
+
+# Clean user snap cache and trash
+find ~/snap -path "*/current/.cache/*" -type f -mtime +30 -delete 2>/dev/null
 find ~/snap -path "*/Trash/*" -type f -delete 2>/dev/null
 
-after_size=$(get_size ~/snap)
-echo -e "Snap cache size after cleanup: ${GREEN}$after_size${NC}"
-track_cleaning "$before_size" "$after_size" "Snap Cache"
+after_size=$(get_size /var/lib/snapd)
+echo -e "\nSnap size after cleanup: ${GREEN}$after_size${NC}"
+track_cleaning "$before_size" "$after_size" "Snap Packages"
 
-if [ ! -z "$discord_snap" ] || [ ! -z "$slack_snap" ]; then
-    echo -e "${YELLOW}Note: Discord and/or Slack are installed via Snap. Snap cleanup was limited to ensure these apps continue working.${NC}"
-fi
+# Spotify Cleanup (for both snap and regular installations)
+print_section "Spotify Cleanup"
+spotify_paths=(
+    "$HOME/snap/spotify"
+    "$HOME/.config/spotify"
+    "$HOME/.cache/spotify"
+)
+
+for path in "${spotify_paths[@]}"; do
+    if [ -d "$path" ]; then
+        before_size=$(get_size "$path")
+        echo -e "Current Spotify data at $path: ${RED}$before_size${NC}"
+        
+        # Clean Spotify cache but keep current metadata
+        if [ -d "$path/cache" ]; then
+            find "$path/cache" -type f -mtime +30 -delete 2>/dev/null
+        fi
+        if [ -d "$path/Data/Browser/Cache" ]; then
+            rm -rf "$path/Data/Browser/Cache"/* 2>/dev/null
+        fi
+        
+        after_size=$(get_size "$path")
+        echo -e "Spotify data after cleanup: ${GREEN}$after_size${NC}"
+        track_cleaning "$before_size" "$after_size" "Spotify Cache"
+    fi
+done
+
+# Discord Cleanup (for both snap and regular installations)
+print_section "Discord Cleanup"
+discord_paths=(
+    "$HOME/snap/discord"
+    "$HOME/.config/discord"
+    "$HOME/.cache/discord"
+)
+
+for path in "${discord_paths[@]}"; do
+    if [ -d "$path" ]; then
+        before_size=$(get_size "$path")
+        echo -e "Current Discord data at $path: ${RED}$before_size${NC}"
+        
+        # Clean Discord cache but retain login data
+        if [ -d "$path/Cache" ]; then
+            rm -rf "$path/Cache"/* 2>/dev/null
+        fi
+        if [ -d "$path/Code Cache" ]; then
+            rm -rf "$path/Code Cache"/* 2>/dev/null
+        fi
+        if [ -d "$path/GPUCache" ]; then
+            rm -rf "$path/GPUCache"/* 2>/dev/null
+        fi
+        
+        after_size=$(get_size "$path")
+        echo -e "Discord data after cleanup: ${GREEN}$after_size${NC}"
+        track_cleaning "$before_size" "$after_size" "Discord Cache"
+    fi
+done
+
+# Slack Cleanup (for both snap and regular installations)
+print_section "Slack Cleanup"
+slack_paths=(
+    "$HOME/snap/slack"
+    "$HOME/.config/Slack"
+    "$HOME/.cache/Slack"
+)
+
+for path in "${slack_paths[@]}"; do
+    if [ -d "$path" ]; then
+        before_size=$(get_size "$path")
+        echo -e "Current Slack data at $path: ${RED}$before_size${NC}"
+        
+        # Clean Slack cache but retain login data
+        if [ -d "$path/Cache" ]; then
+            rm -rf "$path/Cache"/* 2>/dev/null
+        fi
+        if [ -d "$path/Code Cache" ]; then
+            rm -rf "$path/Code Cache"/* 2>/dev/null
+        fi
+        if [ -d "$path/GPUCache" ]; then
+            rm -rf "$path/GPUCache"/* 2>/dev/null
+        fi
+        
+        after_size=$(get_size "$path")
+        echo -e "Slack data after cleanup: ${GREEN}$after_size${NC}"
+        track_cleaning "$before_size" "$after_size" "Slack Cache"
+    fi
+done
 
 # Bun Cache Cleanup
 print_section "Bun Cache Cleanup"
@@ -155,15 +260,21 @@ fi
 
 # Pip Cache Cleanup
 print_section "Pip Cache Cleanup"
-if command -v pip &>/dev/null; then
+if [ -d ~/.cache/pip ]; then
     before_size=$(get_size ~/.cache/pip)
     echo -e "Current Pip cache size: ${RED}$before_size${NC}"
-    pip cache purge
+    
+    if command -v pip &>/dev/null; then
+        pip cache purge
+    else
+        rm -rf ~/.cache/pip/*
+    fi
+    
     after_size=$(get_size ~/.cache/pip)
     echo -e "Pip cache size after cleanup: ${GREEN}$after_size${NC}"
     track_cleaning "$before_size" "$after_size" "Pip Cache"
 else
-    echo -e "Pip not found. Skipping."
+    echo -e "Pip cache not found. Skipping."
 fi
 
 # Firefox Cache Cleanup
@@ -171,7 +282,20 @@ print_section "Firefox Cache Cleanup"
 if [ -d ~/.mozilla/firefox ]; then
     before_size=$(get_size ~/.mozilla/firefox)
     echo -e "Current Firefox cache size: ${RED}$before_size${NC}"
-    find ~/.mozilla/firefox -type d -name "cache2" -exec rm -rf {} \; 2>/dev/null
+    
+    # Find Firefox profiles and clean their caches
+    find ~/.mozilla/firefox -name "*.default*" -type d | while read profile; do
+        if [ -d "$profile/cache2" ]; then
+            rm -rf "$profile/cache2"
+        fi
+        if [ -d "$profile/storage/default" ]; then
+            find "$profile/storage/default" -type f -mtime +30 -delete
+        fi
+        if [ -d "$profile/thumbnails" ]; then
+            rm -rf "$profile/thumbnails"/*
+        fi
+    done
+    
     after_size=$(get_size ~/.mozilla/firefox)
     echo -e "Firefox cache size after cleanup: ${GREEN}$after_size${NC}"
     track_cleaning "$before_size" "$after_size" "Firefox Cache"
@@ -179,35 +303,48 @@ else
     echo -e "Firefox cache not found. Skipping."
 fi
 
-# Chrome/Chromium Cache Cleanup (Safe Mode)
-print_section "Chrome Cache Cleanup"
-if [ -d ~/.cache/google-chrome ]; then
-    before_size=$(get_size ~/.cache/google-chrome)
-    echo -e "Current Chrome cache size: ${RED}$before_size${NC}"
-    
-    # Only clean specific cache directories that don't affect user data
-    safe_to_clean=(
-        "Default/Cache/Cache_Data"        # Regular web cache
-        "Default/Code Cache/js"           # JavaScript cache
-        "Default/GPUCache"               # GPU shader cache
-        "Default/Media Cache"            # Media file cache
-    )
-    
-    for dir in "${safe_to_clean[@]}"; do
-        if [ -d "$HOME/.cache/google-chrome/$dir" ]; then
-            echo -e "Cleaning ${BLUE}$dir${NC}..."
-            find "$HOME/.cache/google-chrome/$dir" -type f -not -name "index*" -delete
-        fi
-    done
-    
-    after_size=$(get_size ~/.cache/google-chrome)
-    echo -e "Chrome cache size after cleanup: ${GREEN}$after_size${NC}"
-    track_cleaning "$before_size" "$after_size" "Chrome Cache"
-    
-    echo -e "\n${GREEN}✓ Chrome cleanup completed safely. Your history, tabs, and settings are preserved.${NC}"
-else
-    echo -e "Chrome cache not found. Skipping."
-fi
+# Chrome/Chromium Cache Cleanup (Enhanced)
+print_section "Chrome/Chromium Cache Cleanup"
+chrome_paths=(
+    "$HOME/.cache/google-chrome"
+    "$HOME/.config/google-chrome"
+    "$HOME/.cache/chromium"
+    "$HOME/.config/chromium"
+)
+
+for chrome_path in "${chrome_paths[@]}"; do
+    if [ -d "$chrome_path" ]; then
+        before_size=$(get_size "$chrome_path")
+        echo -e "Current Chrome/Chromium data at $chrome_path: ${RED}$before_size${NC}"
+        
+        # Find all profiles (Default, Profile 1, etc.)
+        find "$chrome_path" -maxdepth 1 -type d -name "Default" -o -name "Profile*" | while read profile; do
+            echo -e "Cleaning profile: ${BLUE}$(basename "$profile")${NC}"
+            
+            # Clean specific cache directories
+            cache_dirs=(
+                "Cache/Cache_Data"
+                "Code Cache/js"
+                "GPUCache"
+                "Media Cache"
+                "Service Worker/CacheStorage"
+                "Service Worker/ScriptCache"
+                "Applications Cache"
+            )
+            
+            for dir in "${cache_dirs[@]}"; do
+                cache_path="$profile/$dir"
+                if [ -d "$cache_path" ]; then
+                    rm -rf "$cache_path"/* 2>/dev/null
+                fi
+            done
+        done
+        
+        after_size=$(get_size "$chrome_path")
+        echo -e "Chrome/Chromium data after cleanup: ${GREEN}$after_size${NC}"
+        track_cleaning "$before_size" "$after_size" "Chrome/Chromium Cache"
+    fi
+done
 
 # Ubuntu Software Center Cache
 print_section "Ubuntu Software Center Cache Cleanup"
@@ -257,9 +394,22 @@ fi
 # Docker Cleanup (if installed)
 print_section "Docker Cleanup"
 if command -v docker &>/dev/null; then
+    # Get initial docker size (this is approximate)
     before_size=$(docker system df | awk 'NR==2 {print $4}')
     echo -e "Current Docker data size: ${RED}$before_size${NC}"
-    docker system prune -af --volumes
+    
+    # Remove unused containers, networks, and dangling images
+    echo "Removing unused containers, networks, images..."
+    docker system prune -f
+    
+    # Remove unused volumes (with warning)
+    echo -e "${YELLOW}Warning: This will remove all unused volumes. Proceed? (y/n)${NC}"
+    read -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        docker volume prune -f
+    fi
+    
     after_size=$(docker system df | awk 'NR==2 {print $4}')
     echo -e "Docker data size after cleanup: ${GREEN}$after_size${NC}"
     track_cleaning "$before_size" "$after_size" "Docker"
@@ -293,6 +443,51 @@ else
     echo -e "Thumbnail cache not found. Skipping."
 fi
 
+# TypeScript Cleanup
+print_section "TypeScript Cache Cleanup"
+if [ -d ~/.cache/typescript ]; then
+    before_size=$(get_size ~/.cache/typescript)
+    echo -e "Current TypeScript cache size: ${RED}$before_size${NC}"
+    rm -rf ~/.cache/typescript/*
+    after_size=$(get_size ~/.cache/typescript)
+    echo -e "TypeScript cache size after cleanup: ${GREEN}$after_size${NC}"
+    track_cleaning "$before_size" "$after_size" "TypeScript Cache"
+else
+    echo -e "TypeScript cache not found. Skipping."
+fi
+
+# Node Gyp Cache Cleanup
+print_section "Node Gyp Cache Cleanup"
+if [ -d ~/.cache/node-gyp ]; then
+    before_size=$(get_size ~/.cache/node-gyp)
+    echo -e "Current Node Gyp cache size: ${RED}$before_size${NC}"
+    rm -rf ~/.cache/node-gyp/*
+    after_size=$(get_size ~/.cache/node-gyp)
+    echo -e "Node Gyp cache size after cleanup: ${GREEN}$after_size${NC}"
+    track_cleaning "$before_size" "$after_size" "Node Gyp Cache"
+else
+    echo -e "Node Gyp cache not found. Skipping."
+fi
+
+# Mesa Shader Cache Cleanup
+print_section "Mesa Shader Cache Cleanup"
+mesa_cache_dirs=(
+    "$HOME/.cache/mesa_shader_cache"
+    "$HOME/.cache/mesa_shader_cache_db"
+)
+
+for dir in "${mesa_cache_dirs[@]}"; do
+    if [ -d "$dir" ]; then
+        before_size=$(get_size "$dir")
+        echo -e "Current Mesa shader cache size ($dir): ${RED}$before_size${NC}"
+        # Only delete files older than 30 days to keep recent performance benefits
+        find "$dir" -type f -mtime +30 -delete 2>/dev/null
+        after_size=$(get_size "$dir")
+        echo -e "Mesa shader cache size after cleanup: ${GREEN}$after_size${NC}"
+        track_cleaning "$before_size" "$after_size" "Mesa Shader Cache"
+    fi
+done
+
 # Memory Cache Cleanup
 print_section "Memory Cache Cleanup"
 echo "Free memory before cleanup: $(free -h | awk '/^Mem:/ {print $4}')"
@@ -308,14 +503,20 @@ total_bytes=0
 for section in "${!cleaned_space[@]}"; do
     bytes=${cleaned_space["$section"]}
     total_bytes=$((total_bytes + bytes))
-    cleaned_human=$(numfmt --to=iec "$bytes")
-    echo -e "${BLUE}$section:${NC} $cleaned_human"
+    if [ "$bytes" -gt 0 ]; then
+        cleaned_human=$(numfmt --to=iec "$bytes")
+        echo -e "${BLUE}$section:${NC} $cleaned_human"
+    fi
 done
 
 total_cleaned_human=$(numfmt --to=iec "$total_bytes")
 echo -e "\n${GREEN}Total space cleaned: $total_cleaned_human${NC}"
-echo -e "Final free space: $(df -h / | awk 'NR==2 {print $4}')"
+
+# Get final free space
+final_free=$(df -h / | awk 'NR==2 {print $4}')
+echo -e "Final free space: $final_free"
 
 # Print footer
 echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}Cleanup process completed successfully!${NC}"
+echo -e "\n${YELLOW}Note: For further disk usage analysis, run 'sudo apt install ncdu' and then run 'ncdu /' to find other large files${NC}"
